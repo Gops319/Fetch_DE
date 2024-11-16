@@ -40,7 +40,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     networks:
       - kafka-network
-
+  
   my-python-producer:
     image: mpradeep954/fetch-de-data-gen
     depends_on:
@@ -53,15 +53,16 @@ services:
       KAFKA_TOPIC: user-login
     networks:
       - kafka-network
-
+    
   my-python-consumer:
-    build: ./
+    build: .
+    volumes:
+      - .:/app
     depends_on:
       - kafka
-    command: python consumer.py
+    restart: on-failure:10
     environment:
       BOOTSTRAP_SERVERS: kafka:9092
-    restart: on-failure:10
     networks:
       - kafka-network
 

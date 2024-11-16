@@ -1,14 +1,15 @@
-# Use a base Python image
+# Use a Python base image
 FROM python:3.9-slim
 
-# Set the working directory in the container
+# Set the working directory inside the container
 WORKDIR /app
 
-# Copy the current directory contents into the container
-COPY . .
+# Copy local files to the container
+COPY consumer.py /app/consumer.py
+COPY requirements.txt /app/requirements.txt
 
-# Install the required Python packages
-RUN pip install -r requirements.txt
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Run the Python script
+# Set the command to run the consumer
 CMD ["python", "consumer.py"]

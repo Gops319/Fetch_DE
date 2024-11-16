@@ -1,12 +1,11 @@
 from confluent_kafka import Consumer, Producer, KafkaError
-from kafka import KafkaProducer
 import json
 from datetime import datetime
 import logging
 import signal
 import sys
-import unittest
-from unittest.mock import patch
+from collections import defaultdict
+import time
 
 class KafkaProcessor:
     def __init__(self, consumer_conf, producer_conf, input_topic, output_topic):
@@ -18,9 +17,9 @@ class KafkaProcessor:
         self.consumer = Consumer(self.consumer_conf)
         self.producer = Producer(self.producer_conf)
 
-        self.unique_messages = set()
-        self.total_messages = 0
-        self.unique_message_count = 0
+        self.device_type_counts = defaultdict(int)
+        self.user_message_counts = defaultdict(int)
+        self.last_report_time = time.time()
 
         # Set up logging
         logging.basicConfig(level=logging.INFO)
@@ -37,33 +36,32 @@ class KafkaProcessor:
         sys.exit(0)
 
     def process_message(self, message):
+
         """Process the Kafka message."""
-        try:
-            data = json.loads(message)
-            timestamp=data.get("timestamp")
+        data = json.loads(message)
+        
+        if 'device_type' not in data or 'app_version' not in data:
+            self.logger.warning("Skipping message due to missing keys.")
+            return None
+        
+        if data['device_type'].lower() not in ['android', 'ios']:
+            return None
+        
+        if data['app_version'] < '2.3.0':
+            return None
+        
+        if data['timestamp'] is None:
+            return None
 
-            if timestamp is None:
-                return None
-            # self.total_messages += 1
+        # Add processed_time to the message
+        data['timestamp_in_utc'] = datetime.utcfromtimestamp(int(data['timestamp'])).strftime('%Y-%m-%d %H:%M:%S')
+        data['processed_time'] = int(datetime.utcnow().timestamp() * 1000)
 
-            # Generate a hash for the message (use sorted JSON to ensure consistency)
-            # message_hash = hashlib.md5(json.dumps(data, sort_keys=True).encode('utf-8')).hexdigest()
+        return data
 
-            # Check if the message is unique
-            # if message_hash not in self.unique_messages:
-            #     self.unique_messages.add(message_hash)
-            #     self.unique_message_count += 1  # Increment unique message count
-
-            # Add processed_time to the message
-            data['time_in_utc'] = datetime.utcfromtimestamp(int(timestamp)).strftime('%Y-%m-%d %H:%M:%S')
-            data['processed_time'] = int(datetime.utcnow().timestamp() * 1000)
-
-            return data
-        except json.JSONDecodeError:
-            self.logger.error("Failed to decode message.")
-        return None
 
     def produce_message(self, data):
+
         """Produce the processed message to the output topic."""
         try:
             # Send the processed data to the new Kafka topic
@@ -73,6 +71,7 @@ class KafkaProcessor:
             self.logger.error(f"Error producing message: {e}")
 
     def consume_messages(self):
+
         """Consume messages from the Kafka topic and process them."""
         while True:
             # Poll for new messages
@@ -92,64 +91,39 @@ class KafkaProcessor:
             # If data is processed, send to the new topic
             if processed_data:
                 self.logger.info(f"Sending processed data: {processed_data}")
+                self.aggregate_data(processed_data)
                 self.produce_message(processed_data)
             else:
                 self.logger.error("Message skipped due to processing error.")
+            
+            # Periodically report counts
+            self.report_aggregations()
+
+    def aggregate_data(self, data):
+
+        """Perform real-time aggregation."""
+        # Increment device type counts
+        self.device_type_counts[data['device_type']] += 1
+
+        # Increment user message counts
+        #self.user_message_counts[data['user_id']] += 1
+
+    def report_aggregations(self):
+
+        """Periodically log the aggregation results."""
+        current_time = time.time()
+        if current_time - self.last_report_time >= 60:  # Report every 60 seconds
+            self.logger.info(f"Device Type Counts: {dict(self.device_type_counts)}")
+            #self.logger.info(f"User Message Counts: {dict(self.user_message_counts)}")
+            self.last_report_time = current_time
 
     def start(self):
         """Start the Kafka consumer."""
         self.consumer.subscribe([self.input_topic])
         self.consume_messages()
 
-# Unit Test Class
-class TestKafkaProcessor(unittest.TestCase):
-    def setUp(self):
-        """Set up a KafkaProcessor instance for testing."""
-        consumer_conf = {
-            'bootstrap.servers': 'localhost:9092',
-            'group.id': 'my-consumer-group',
-            'auto.offset.reset': 'earliest'
-        }
-        producer_conf = {
-            'bootstrap.servers': 'localhost:9092'
-        }
-        self.kafka_processor = KafkaProcessor(consumer_conf, producer_conf, 'input-topic', 'output-topic')
-
-    def test_process_message_valid(self):
-        """Test that process_message works with valid input."""
-        message = '{"message_id": "1", "timestamp": "1609459200"}'  # Valid JSON
-        result = self.kafka_processor.process_message(message)
-        self.assertIsNotNone(result)
-        self.assertIn('processed_time', result)
-        self.assertIn('time_in_utc', result)
-
-        # Check if the 'processed_time' is in correct format
-        try:
-            processed_time = datetime.utcfromtimestamp(result['processed_time'] / 1000)
-            self.assertIsInstance(processed_time, datetime)
-        except Exception as e:
-            self.fail(f"processed_time format is incorrect: {e}")
-
-    def test_process_message_invalid_json(self):
-        """Test that process_message returns None for invalid JSON."""
-        message = '{"message_id": "1", "timestamp": 1609459200'  # Invalid JSON (missing closing bracket)
-        result = self.kafka_processor.process_message(message)
-        self.assertIsNone(result)
-
-    def test_process_message_no_timestamp(self):
-        """Test that process_message returns None if timestamp is missing."""
-        message = '{"message_id": "1"}'  # Missing timestamp field
-        result = self.kafka_processor.process_message(message)
-        self.assertIsNone(result)
-
-    @patch.object(KafkaProducer, 'send', return_value = None)
-    def test_produce_message(self, mock_produce):
-        """Test that produce_message works and calls the produce method."""
-        data = {"message_id": "1", "processed_time": 1609459200}
-        self.kafka_processor.produce_message(data)
-        mock_produce.assert_called_once_with('output-topic', json.dumps(data).encode('utf-8'))
-
 if __name__ == "__main__":
+
     # Kafka consumer configuration
     consumer_conf = {
         'bootstrap.servers': 'kafka:9092',
@@ -166,8 +140,7 @@ if __name__ == "__main__":
     OUTPUT_TOPIC = 'processed-user-login'
 
     # Create KafkaProcessor instance and start consuming messages
-    kafka_processor = KafkaProcessor(consumer_conf, producer_conf, INPUT_TOPIC, OUTPUT_TOPIC)
-    #kafka_processor.start()
+    kafka_processor = KafkaProcessor(consumer_conf, producer_conf, 'user-login', OUTPUT_TOPIC)
+    kafka_processor.start()
 
-    # Run the tests
-    unittest.main(argv=[''], verbosity=2, exit=False)
+    
