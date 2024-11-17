@@ -8,11 +8,14 @@ from collections import defaultdict
 import time
 
 class KafkaProcessor:
-    def __init__(self, consumer_conf, producer_conf, input_topic, output_topic):
+    def __init__(self, consumer_conf, producer_conf, input_topic, output_topic, aggregated_topic):
+
+        time.sleep(5) # Consumer is running before producer is creating a topic
         self.consumer_conf = consumer_conf
         self.producer_conf = producer_conf
         self.input_topic = input_topic
         self.output_topic = output_topic
+        self.aggregated_topic = aggregated_topic
 
         self.consumer = Consumer(self.consumer_conf)
         self.producer = Producer(self.producer_conf)
@@ -20,6 +23,8 @@ class KafkaProcessor:
         self.device_type_counts = defaultdict(int)
         self.user_message_counts = defaultdict(int)
         self.last_report_time = time.time()
+
+        
 
         # Set up logging
         logging.basicConfig(level=logging.INFO)
@@ -38,7 +43,13 @@ class KafkaProcessor:
     def process_message(self, message):
 
         """Process the Kafka message."""
-        data = json.loads(message)
+        
+        # write try and exception for this
+        try:
+            data = json.loads(message)
+        except:
+            return None
+
         
         if 'device_type' not in data or 'app_version' not in data:
             self.logger.warning("Skipping message due to missing keys.")
@@ -66,6 +77,8 @@ class KafkaProcessor:
         try:
             # Send the processed data to the new Kafka topic
             self.producer.produce(self.output_topic, json.dumps(data).encode('utf-8'))
+            #self.producer.produce(self.aggregated_topic, json.dumps(data).encode('utf-8'))
+            #self.producer.produce()
             self.producer.flush()
         except Exception as e:
             self.logger.error(f"Error producing message: {e}")
@@ -97,7 +110,7 @@ class KafkaProcessor:
                 self.logger.error("Message skipped due to processing error.")
             
             # Periodically report counts
-            self.report_aggregations()
+            self.produce_aggregated_data()
 
     def aggregate_data(self, data):
 
@@ -108,14 +121,21 @@ class KafkaProcessor:
         # Increment user message counts
         #self.user_message_counts[data['user_id']] += 1
 
-    def report_aggregations(self):
+    def produce_aggregated_data(self):
 
         """Periodically log the aggregation results."""
+        
         current_time = time.time()
         if current_time - self.last_report_time >= 60:  # Report every 60 seconds
-            self.logger.info(f"Device Type Counts: {dict(self.device_type_counts)}")
+            aggregation_data = {"device_type_counts": dict(self.device_type_counts)}
+
+            self.producer.produce(self.aggregated_topic, json.dumps(aggregation_data).encode('utf-8'))
+            #self.producer.produce()
+            self.producer.flush()
+            #self.logger.info(f"Device Type Counts: {dict(self.device_type_counts)}")
             #self.logger.info(f"User Message Counts: {dict(self.user_message_counts)}")
             self.last_report_time = current_time
+
 
     def start(self):
         """Start the Kafka consumer."""
@@ -138,9 +158,10 @@ if __name__ == "__main__":
 
     INPUT_TOPIC = 'user-login'
     OUTPUT_TOPIC = 'processed-user-login'
+    AGGREGATED_TOPIC = 'device_type_count'
 
     # Create KafkaProcessor instance and start consuming messages
-    kafka_processor = KafkaProcessor(consumer_conf, producer_conf, 'user-login', OUTPUT_TOPIC)
+    kafka_processor = KafkaProcessor(consumer_conf, producer_conf, INPUT_TOPIC, OUTPUT_TOPIC, AGGREGATED_TOPIC)
     kafka_processor.start()
 
     

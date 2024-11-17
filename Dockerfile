@@ -5,9 +5,7 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Copy local files to the container
-COPY consumer.py /app/consumer.py
-COPY requirements.txt /app/requirements.txt
-
+COPY . /app
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
