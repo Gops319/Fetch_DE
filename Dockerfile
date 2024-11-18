@@ -10,4 +10,4 @@ COPY . /app
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Set the command to run the consumer
-CMD ["python", "consumer.py"]
+CMD ["python", "processor.py"]

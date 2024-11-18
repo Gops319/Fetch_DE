@@ -10,29 +10,29 @@ import time
 class KafkaProcessor:
     def __init__(self, consumer_conf, producer_conf, input_topic, output_topic, aggregated_topic):
 
-        time.sleep(5) # Consumer is running before producer is creating a topic
+        time.sleep(10) # Delay to ensure the consumer doesn't start before the producer creates the topics
         self.consumer_conf = consumer_conf
         self.producer_conf = producer_conf
         self.input_topic = input_topic
         self.output_topic = output_topic
         self.aggregated_topic = aggregated_topic
 
+        # Kafka consumer and producer instances
         self.consumer = Consumer(self.consumer_conf)
         self.producer = Producer(self.producer_conf)
 
         self.device_type_counts = defaultdict(int)
-        self.user_message_counts = defaultdict(int)
         self.last_report_time = time.time()
 
-        
 
         # Set up logging
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
 
-        # Register signal handler
+        # Register signal handler to ensure graceful shutdown
         signal.signal(signal.SIGTERM, self.handle_signal)
         signal.signal(signal.SIGINT, self.handle_signal)
+
 
     def handle_signal(self, sig, frame):
         """Handle termination signal."""
@@ -41,30 +41,32 @@ class KafkaProcessor:
         sys.exit(0)
 
     def process_message(self, message):
-
         """Process the Kafka message."""
         
         # write try and exception for this
         try:
             data = json.loads(message)
         except:
-            return None
+            return None # Return None if the message is not valid JSON
 
-        
+        # Skip the messages if 'device_type' and 'app_version' fields are missing
         if 'device_type' not in data or 'app_version' not in data:
             self.logger.warning("Skipping message due to missing keys.")
             return None
         
+        # Only allow 'android' or 'iOS' as device types
         if data['device_type'].lower() not in ['android', 'ios']:
             return None
         
+        # Skip messages with app version lower than '2.3.0'
         if data['app_version'] < '2.3.0':
             return None
         
+        # Ensure that a timestamp is provided
         if data['timestamp'] is None:
             return None
 
-        # Add processed_time to the message
+        # Add processed_time to the message and convert message timestamp to UTC
         data['timestamp_in_utc'] = datetime.utcfromtimestamp(int(data['timestamp'])).strftime('%Y-%m-%d %H:%M:%S')
         data['processed_time'] = int(datetime.utcnow().timestamp() * 1000)
 
@@ -72,13 +74,10 @@ class KafkaProcessor:
 
 
     def produce_message(self, data):
-
         """Produce the processed message to the output topic."""
         try:
             # Send the processed data to the new Kafka topic
             self.producer.produce(self.output_topic, json.dumps(data).encode('utf-8'))
-            #self.producer.produce(self.aggregated_topic, json.dumps(data).encode('utf-8'))
-            #self.producer.produce()
             self.producer.flush()
         except Exception as e:
             self.logger.error(f"Error producing message: {e}")
@@ -88,12 +87,12 @@ class KafkaProcessor:
         """Consume messages from the Kafka topic and process them."""
         while True:
             # Poll for new messages
-            msg = self.consumer.poll(timeout=1.0)
+            msg = self.consumer.poll(timeout=1.0) # Set a timeout to avoid blocking indefinitely
             if msg is None:
                 continue
             if msg.error():
                 if msg.error().code() == KafkaError._PARTITION_EOF:
-                    continue
+                    continue # Ignore end of partition errors
                 else:
                     self.logger.info(f"Error: {msg.error()}")
                     break
@@ -113,28 +112,22 @@ class KafkaProcessor:
             self.produce_aggregated_data()
 
     def aggregate_data(self, data):
-
         """Perform real-time aggregation."""
+
         # Increment device type counts
         self.device_type_counts[data['device_type']] += 1
 
-        # Increment user message counts
-        #self.user_message_counts[data['user_id']] += 1
 
     def produce_aggregated_data(self):
-
-        """Periodically log the aggregation results."""
+        """Periodically produce the aggregation results."""
         
         current_time = time.time()
         if current_time - self.last_report_time >= 60:  # Report every 60 seconds
             aggregation_data = {"device_type_counts": dict(self.device_type_counts)}
 
             self.producer.produce(self.aggregated_topic, json.dumps(aggregation_data).encode('utf-8'))
-            #self.producer.produce()
             self.producer.flush()
-            #self.logger.info(f"Device Type Counts: {dict(self.device_type_counts)}")
-            #self.logger.info(f"User Message Counts: {dict(self.user_message_counts)}")
-            self.last_report_time = current_time
+            self.last_report_time = current_time # Reset the report time
 
 
     def start(self):

@@ -1,8 +1,7 @@
 import unittest
 import sys
-sys.path.insert(0,'/Users/gopio/OneDrive/Desktop/Fetch_DE')
 from datetime import datetime
-from consumer import KafkaProcessor
+from processor import KafkaProcessor
 
 # Unit Test Class
 class TestKafkaProcessor(unittest.TestCase):
