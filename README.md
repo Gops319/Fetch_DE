@@ -32,7 +32,7 @@ This project implements a real-time data pipeline using Apache Kafka and Docker.
 
 - After running docker-compose up, verify the services:
     - Open your terminal and look for messages indicating that  Zookeeper and Kafka have started successfully.
-    - Visit http:localhost:8080 and ensure the Kafka cluster(local) and user-login topic are visible.
+    - Visit http:localhost:8080 and ensure the Kafka cluster(local) and user-login, processed-user-login, device_type_count topics are visible.
     - Check the Producer logs: Look for messages being sent.
     - Check Consumer logs: Look for processed messages.
     - Inspect Docker Containers: Run `docker ps` to confirm all containers (zookeeper, Kafka, Kafka-ui, producer, consumer) are running.
@@ -49,7 +49,7 @@ This project implements a real-time data pipeline using Apache Kafka and Docker.
 
     `docker-compose down`
 
-## **Detaield Implementation Walkthrough**
+## **Detailed Implementation Walkthrough**
 
 - **Modifying docker-compose.yaml**
 
@@ -64,10 +64,6 @@ This project implements a real-time data pipeline using Apache Kafka and Docker.
     - Installed the required dependency (confluent_kafka) using `pip install confluent_kafka`.
     - `Ran pip freeze > requirements.txt` to generate a list of installed packages along with the versions, ensuring consistent environment setup.
 
-    **Why create a virtual environment?**
-    - A virtual environment isolates the project's dependencies from the global Python environment, avoiding version conflicts across projects.
-    - It simplifies generating requirements.txt by accurately listing only the packages required for the current project.
-    - In containerized environments, requirements.txt ensures the container builds with the exact dependencies the application needs, promoting portability and reliability.
 
 - **Creating the Dockerfile**
 
@@ -80,8 +76,8 @@ This project implements a real-time data pipeline using Apache Kafka and Docker.
 - **Key Points**
 
     - **Handling Topic Creation Timing with `time.sleep(10)`**.
-        - This line `time.sleep(10)` was added to address a common issue in kafka pipeines where the consumer attempts to subscribe to a topic before it is created by the producer. Without this delay, the consumer might throw an error indicating that the topic does not exist. This ensures that the consumer starts only after the producer has initialized all required topics.
-        - By introducing this delay, the pipeline avoids unnecessary errors and ensures smooth startup in environments where topics are dynamically created.
+        - Added a delay because, in this current setup, the source topic is not readily available, which throws an error with the consumer.
+          
 
     - **Designing for two topics: Processed data and Aggregated** data
 
@@ -112,23 +108,22 @@ This project implements a real-time data pipeline using Apache Kafka and Docker.
 
 - Deploy the Dockerized application to ECS or Lambda depending on the frequency of messages.
 
-- We can use tools like Jenkins for CI/CD.
+- Use Jenkins for CI/CD.
 
 
 **2. What other components would you want to add to make this production-ready?**
 
-- Use IAC tools to automate Kafka topic creation for consistency and version control across environments rather than producing with the producer.
+- Use IAC tools to automate Kafka topic creation for consistency and version control across environments rather than creating the topics with the producer.
 
 - Use mocks in tests to simulate external dependencies and improve isolation and speed.
 
-- Make producer asynchronous if needed: Allow the producer to send messages without waiting for acknowledgments, improving throughput.
-
+- Make the producer asynchronous if needed.
+  
 - Add Metrics and Monitoring: Implement monitoring tools like Cloudwatch to track performance and identify issues in production.
 
 
 **3. How can this application scale with a growing dataset?**
 
-- Horizontally scale consumers: Consumers can be horizontally scaled to handle increased partitions as the data grows.
-- Increase the number of topics: If the consumer has reached partition limits, create more topics to distribute the load across more partitions and consumers.
+- If consumer scaling matches with partitions, increase partitions to be able to scale the consumer horizontally, as it can't be scaled vertically anymore.
 
 
