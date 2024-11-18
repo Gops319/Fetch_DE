@@ -124,6 +124,4 @@ This project implements a real-time data pipeline using Apache Kafka and Docker.
 
 **3. How can this application scale with a growing dataset?**
 
-- If consumer scaling matches with partitions, increase partitions to be able to scale the consumer horizontally, as it can't be scaled vertically anymore.
-
-
+- If the application can't be scaled vertically, and the number of consumers per group matches with partitions, increase the number of partitions.
