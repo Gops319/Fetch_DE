@@ -16,6 +16,8 @@ class TestKafkaProcessor(unittest.TestCase):
             'bootstrap.servers': 'kafka:9092'
         }
         self.kafka_processor = KafkaProcessor(consumer_conf, producer_conf, 'input-topic', 'output-topic', 'device_type_count')
+        self.kafka_processor = KafkaProcessor()
+        
 
     def test_process_message_valid(self):
         """Test that process_message works with valid input."""

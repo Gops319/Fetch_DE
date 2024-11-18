@@ -9,7 +9,7 @@ import time
 
 class KafkaProcessor:
     def __init__(self, consumer_conf, producer_conf, input_topic, output_topic, aggregated_topic):
-
+        
         time.sleep(10) # Delay to ensure the consumer doesn't start before the producer creates the topics
         self.consumer_conf = consumer_conf
         self.producer_conf = producer_conf
@@ -153,6 +153,8 @@ if __name__ == "__main__":
     OUTPUT_TOPIC = 'processed-user-login'
     AGGREGATED_TOPIC = 'device_type_count'
 
+    
+    
     # Create KafkaProcessor instance and start consuming messages
     kafka_processor = KafkaProcessor(consumer_conf, producer_conf, INPUT_TOPIC, OUTPUT_TOPIC, AGGREGATED_TOPIC)
     kafka_processor.start()
